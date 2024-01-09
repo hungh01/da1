@@ -1,10 +1,15 @@
 package da1;
 
+import static da1.ClientSender.generateSecretKeyFromString;
 import java.io.*;
 import java.net.*;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.Map.Entry;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
@@ -51,13 +56,24 @@ public class ChatServer extends Thread
                 String replyMSG = "";
                 
                 socket.receive(packet);
+
                 
                 String content = ChatDgram.toString(packet);
                 
-
+                System.out.println("----content received-->>> "+ content);
                 
                 InetAddress clientAddress = packet.getAddress();
+                SecretKey secretkey;
+                try {
+                    secretkey = generateSecretKeyFromString(clientAddress.getHostAddress());
+                    content= decrypt(content, secretkey);
+                    System.out.println("----content received-->>> "+ content);
+                } catch (NoSuchAlgorithmException ex) {
+                    Logger.getLogger(ChatServer.class.getName()).log(Level.SEVERE, null, ex);
+                }
+
                 int clientPort = packet.getPort();
+                
                 String id = clientAddress.toString() + ":" + clientPort;
                 System.out.println(id + ": " + content);
 
@@ -92,6 +108,7 @@ public class ChatServer extends Thread
                 	{
                 		cNicks.put(id, content);
                 		replyMSG = "1#Welcome, you can send messages";  
+                                
                         DatagramPacket reply = ChatDgram.toDatagram(replyMSG, clientAddress, clientPort);
                         socket.send(reply);
                 	}
@@ -124,11 +141,15 @@ public class ChatServer extends Thread
             }
         }
     }
-    public static SecretKey generateSecretKeyFromString(String keyString) throws UnsupportedEncodingException, NoSuchAlgorithmException {
-        // Chuyển đổi chuỗi thành mảng byte sử dụng Base64
-        byte[] keyBytes = Base64.getDecoder().decode(keyString);
+        public static SecretKey generateSecretKeyFromString(String keyString) throws UnsupportedEncodingException, NoSuchAlgorithmException {
+        // Use a secure hash function to generate a key of the desired length
+        MessageDigest sha = MessageDigest.getInstance("SHA-256");
+        byte[] keyBytes = sha.digest(keyString.getBytes("UTF-8"));
 
-        // Tạo đối tượng SecretKey từ mảng byte
+        // Use only the first 16, 24, or 32 bytes for AES
+        keyBytes = Arrays.copyOf(keyBytes, 32); // 32 bytes for AES-256
+
+        // Create a SecretKey from the key bytes
         return new SecretKeySpec(keyBytes, "AES");
     }
     public static String encrypt(String plaintext, SecretKey secretKey) throws Exception {
@@ -138,14 +159,20 @@ public class ChatServer extends Thread
         return Base64.getEncoder().encodeToString(encryptedBytes);
     }
 
-    public static String decrypt(String ciphertext, SecretKey secretKey) throws Exception {
+public static String decrypt(String ciphertext, SecretKey secretKey) throws Exception {
+    try {
         Cipher cipher = Cipher.getInstance("AES");
         cipher.init(Cipher.DECRYPT_MODE, secretKey);
-        byte[] decryptedBytes = cipher.doFinal(Base64.getDecoder().decode(ciphertext));
-        return new String(decryptedBytes);
+        byte[] decodedBytes = Base64.getDecoder().decode(ciphertext);
+        byte[] decryptedBytes = cipher.doFinal(decodedBytes);
+        return new String(decryptedBytes, StandardCharsets.UTF_8);
+    } catch (Exception e) {
+        e.printStackTrace(); // Print the stack trace for debugging
+        throw e; // Re-throw the exception after printing the stack trace
     }
+}
     
-    private void sendToAll(String message, CODE code, String id) throws IOException
+    private void sendToAll(String message, CODE code, String id) throws IOException, UnsupportedEncodingException
     {
     	String msg;
     	
@@ -169,8 +196,21 @@ public class ChatServer extends Thread
 
         for (int i=0; i < cIPs.size(); i++) 
         {
-			DatagramPacket reply = ChatDgram.toDatagram(msg, cIPs.get(i), cPorts.get(i));
-            socket.send(reply);
+                try {
+                    SecretKey secretkey;
+                    secretkey = generateSecretKeyFromString(cIPs.get(i).getHostAddress());
+                    //System.out.println(cIPs.get(i).getHostAddress()+"----Secrect Key-->>> "+ secretkey);
+                    try {
+                        String sms = encrypt(msg,secretkey);
+                        //System.out.println("------sms--->"+ sms);
+                        DatagramPacket reply = ChatDgram.toDatagram(sms, cIPs.get(i), cPorts.get(i));
+                        socket.send(reply);
+                    } catch (Exception ex) {
+                        Logger.getLogger(ChatServer.class.getName()).log(Level.SEVERE, null, ex);
+                    }
+                } catch (NoSuchAlgorithmException ex) {
+                    Logger.getLogger(ChatServer.class.getName()).log(Level.SEVERE, null, ex);
+                }
         }	
     }
     
@@ -182,7 +222,6 @@ public class ChatServer extends Thread
     	for(Entry <String, String> entry : cNicks.entrySet()) {
     	    list += entry.getValue() + "<|>";
     	}
-    	
     	sendToAll(list, CODE.LIST, null);	
     }
     
