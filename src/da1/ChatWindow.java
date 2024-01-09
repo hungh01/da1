@@ -59,17 +59,18 @@ class ClientSender {
 
     private int port;
     private DatagramSocket socket;
-    private String hostname = "localhost";
+    private String hostname ;
 
-    ClientSender(DatagramSocket s, int p) throws Exception {
+    ClientSender(DatagramSocket s, int p, String host) throws Exception {
         socket = s;
         port = p;
+        hostname = host;
     }
 
     public void sendMessage(String s) throws Exception {
         InetAddress address = InetAddress.getByName(hostname);
-
-        SecretKey secretkey = generateSecretKeyFromString(address.getHostAddress());
+        
+        SecretKey secretkey = generateSecretKeyFromString(InetAddress.getLocalHost().getHostAddress());
 
         String sms = encrypt(s, secretkey);
         byte buf[] = sms.getBytes();
@@ -142,7 +143,7 @@ class ClientSender {
 //    }
     void sendFile(String filePath) throws UnknownHostException, IOException, UnsupportedEncodingException, NoSuchAlgorithmException {
         InetAddress address = InetAddress.getByName(hostname);
-        SecretKey secretkey = generateSecretKeyFromString(address.getHostAddress());
+        SecretKey secretkey = generateSecretKeyFromString(InetAddress.getLocalHost().getHostAddress());
         FileEvent f = getFileEvent(filePath);
         String[] pathElements = f.getFilename().split("/");
         String filename = pathElements[pathElements.length-1]+" ";
@@ -253,8 +254,8 @@ public class ChatWindow extends JPanel implements ActionListener {
         }
     }
 
-    public ChatWindow(String name) throws Exception {
-        frame = new FrameReceiver(PORT, name);
+    public ChatWindow(String name,String host) throws Exception {
+        frame = new FrameReceiver(PORT, name,host);
         frame.setBounds(100, 100, 584, 578);
         frame.getContentPane().setBackground(Color.decode("#006699"));
 
@@ -276,7 +277,7 @@ class FrameReceiver extends JFrame implements Runnable {
     int port;
     byte buf[];
 
-    FrameReceiver(int p, String name) throws Exception {
+    FrameReceiver(int p, String name,String host) throws Exception {
         // TODO: format messages?
         msgArea = new JTextArea();
         msgArea.setWrapStyleWord(true);
@@ -322,7 +323,7 @@ class FrameReceiver extends JFrame implements Runnable {
         lblOnline.setForeground(Color.WHITE);
 
         socket = new DatagramSocket();
-        sender = new ClientSender(socket, p);
+        sender = new ClientSender(socket,p,host);
 
         JButton fileButton = new JButton("Send File");
         fileButton.addActionListener(new ActionListener() {
@@ -397,7 +398,7 @@ class FrameReceiver extends JFrame implements Runnable {
 
                 String received = ChatDgram.toString(packet);
                 //System.out.println("Dữ liệu nhận: " + received);
-                String address = InetAddress.getByName("localhost").getHostAddress();
+                String address = InetAddress.getLocalHost().getHostAddress();
                 SecretKey secretkey = generateSecretKeyFromString(address);
 
                 received = decrypt(received, secretkey);
